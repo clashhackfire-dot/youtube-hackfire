@@ -1,0 +1,81 @@
+name: Download YouTube Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: 'YouTube video URL'
+        required: true
+        type: string
+      quality:
+        description: 'Quality (e.g. 2160, 1440, 1080, 720, 480, 360, best, worst)'
+        required: true
+        default: '1080'
+        type: string
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install yt-dlp, ffmpeg, and deno (JS runtime)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg unzip
+          pip install -U yt-dlp
+          pip install -U bgutil-ytdlp-pot-provider
+          curl -fsSL https://deno.land/install.sh | sh -s -- -y
+          echo "$HOME/.deno/bin" >> "$GITHUB_PATH"
+
+      - name: Start PO Token provider server
+        run: |
+          docker run --name bgutil-provider -d --init -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider
+          # Give it a moment to come up
+          sleep 3
+          docker ps
+          curl -sf http://127.0.0.1:4416/ping || echo "warning: provider ping failed, continuing anyway"
+
+      - name: Write cookies file (optional)
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          if [ -n "$YT_COOKIES" ]; then
+            printf '%s' "$YT_COOKIES" > cookies.txt
+          fi
+
+      - name: Download video
+        run: |
+          mkdir -p downloads
+          QUALITY="${{ github.event.inputs.quality }}"
+          if [ "$QUALITY" = "best" ]; then
+            FORMAT="bestvideo+bestaudio/best"
+          elif [ "$QUALITY" = "worst" ]; then
+            FORMAT="worstvideo+worstaudio/worst"
+          else
+            FORMAT="bestvideo[height<=${QUALITY}]+bestaudio/best[height<=${QUALITY}]"
+          fi
+
+          COOKIE_ARGS=""
+          if [ -f cookies.txt ]; then
+            COOKIE_ARGS="--cookies cookies.txt"
+          fi
+
+          yt-dlp -f "$FORMAT" \
+            --merge-output-format mp4 \
+            --js-runtimes deno \
+            $COOKIE_ARGS \
+            -o "downloads/%(title)s.%(ext)s" \
+            "${{ github.event.inputs.video_url }}"
+
+      - name: Stop PO Token provider server
+        if: always()
+        run: docker rm -f bgutil-provider || true
+
+      - name: List downloaded file
+        run: ls -lh downloads/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-video
+          path: downloads/
+          retention-days: 5
