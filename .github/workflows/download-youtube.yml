@@ -1,0 +1,109 @@
+name: YouTube Downloader
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'YouTube URL (video, playlist, or channel)'
+        required: true
+        type: string
+      download_type:
+        description: 'Download type'
+        required: true
+        default: 'video'
+        type: choice
+        options:
+          - video
+          - playlist
+          - channel
+      quality:
+        description: 'Video quality'
+        required: false
+        default: 'best'
+        type: choice
+        options:
+          - best
+          - 1080p
+          - 720p
+          - 480p
+          - 360p
+          - audio_only
+      max_duration:
+        description: 'Max duration in minutes (optional)'
+        required: false
+        type: string
+        default: ''
+      max_count:
+        description: 'Max videos to download (optional)'
+        required: false
+        type: string
+        default: ''
+      output_format:
+        description: 'Output format'
+        required: false
+        default: 'mp4'
+        type: choice
+        options:
+          - mp4
+          - webm
+          - mkv
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r scripts/requirements.txt
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+    
+    - name: Create output directory
+      run: mkdir -p downloads
+    
+    - name: Download YouTube content
+      run: |
+        python scripts/download-youtube.py \
+          --url "${{ github.event.inputs.url }}" \
+          --type "${{ github.event.inputs.download_type }}" \
+          --quality "${{ github.event.inputs.quality }}" \
+          --output-format "${{ github.event.inputs.output_format }}" \
+          ${{
+            github.event.inputs.max_duration &&
+            format('--max-duration {0}', github.event.inputs.max_duration)
+          }} \
+          ${{
+            github.event.inputs.max_count &&
+            format('--max-count {0}', github.event.inputs.max_count)
+          }}
+    
+    - name: Generate thumbnails and metadata
+      run: |
+        python scripts/generate-metadata.py \
+          --input-dir downloads \
+          --output-dir downloads/metadata
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: youtube-downloads
+        path: downloads/
+        retention-days: 7
+    
+    - name: Upload to Google Drive (optional)
+      if: false  # Enable if you want to upload to Google Drive
+      uses: adityak74/google-drive-upload-git-action@main
+      with:
+        credentials: ${{ secrets.GDRIVE_CREDENTIALS }}
+        filename: downloads/
+        folderId: ${{ secrets.GDRIVE_FOLDER_ID }}
