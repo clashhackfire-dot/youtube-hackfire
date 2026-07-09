@@ -54,10 +54,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
     
@@ -94,11 +94,13 @@ jobs:
           --output-dir downloads/metadata
     
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: youtube-downloads
         path: downloads/
         retention-days: 7
+        compression-level: 6
+        if-no-files-found: warn
     
     - name: Upload to Google Drive (optional)
       if: false  # Enable if you want to upload to Google Drive
